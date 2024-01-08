@@ -30,8 +30,14 @@ const (
 	errorStackTraceKey = "stack_trace"
 )
 
+type Handler struct {
+	jsonHandler slog.Handler
+	levelNamer  func(slog.Level) string
+}
+
 type Config struct {
-	Writer     io.Writer
+	Writer io.Writer
+	// enables customizing of how log levels would look (INFO, info, INF, etc.)
 	LevelNamer func(slog.Level) string
 }
 
@@ -43,13 +49,14 @@ func NewHandler(c Config) *Handler {
 		c.Writer = os.Stdout
 	}
 	return &Handler{
-		next: slog.NewJSONHandler(c.Writer, &slog.HandlerOptions{
+		jsonHandler: slog.NewJSONHandler(c.Writer, &slog.HandlerOptions{
 			ReplaceAttr: removeJsonHandlerAttrs,
 		}),
 		levelNamer: c.LevelNamer,
 	}
 }
 
+// slog.JsonHandler has opinions about some field names. This removes all of them so we can later add ECS compliant ones.
 func removeJsonHandlerAttrs(groups []string, a slog.Attr) slog.Attr {
 	switch a.Key {
 	case "time", "msg", "source", "level":
@@ -61,13 +68,9 @@ func removeJsonHandlerAttrs(groups []string, a slog.Attr) slog.Attr {
 
 func defaultLevelNamer(l slog.Level) string { return l.String() }
 
-type Handler struct {
-	next       slog.Handler
-	levelNamer func(slog.Level) string
-}
-
+// TODO should be handled by ecsslog.Handler
 func (x *Handler) Enabled(ctx context.Context, level slog.Level) bool {
-	return x.next.Enabled(ctx, level)
+	return x.jsonHandler.Enabled(ctx, level)
 }
 
 func (x *Handler) Handle(ctx context.Context, record slog.Record) error {
@@ -85,13 +88,14 @@ func (x *Handler) Handle(ctx context.Context, record slog.Record) error {
 			slog.String(functionKey, f.Function),
 		),
 	)
-	return x.next.Handle(ctx, record)
+	return x.jsonHandler.Handle(ctx, record)
 }
 
+// TODO add a clone method for convenience
 func (x *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &Handler{next: x.next.WithAttrs(attrs), levelNamer: x.levelNamer}
+	return &Handler{jsonHandler: x.jsonHandler.WithAttrs(attrs), levelNamer: x.levelNamer}
 }
 
 func (x *Handler) WithGroup(name string) slog.Handler {
-	return &Handler{next: x.next.WithGroup(name), levelNamer: x.levelNamer}
+	return &Handler{jsonHandler: x.jsonHandler.WithGroup(name), levelNamer: x.levelNamer}
 }
